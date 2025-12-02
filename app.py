@@ -58,11 +58,16 @@ UPLOAD_FOLDER = 'static/uploads'
 
 def create_db_connection():
     try:
+        # ✅ قراءة البورت من Environment Variables (ضروري لـ Aiven)
+        # إلا مالقاهش كيستعمل 3306
+        db_port = int(os.getenv("MYSQL_PORT", 3306))
+        
         conn = mysql.connector.connect(
             host=MYSQL_HOST,
             user=MYSQL_USER,
             password=MYSQL_PASSWORD,
-            database=MYSQL_DB
+            database=MYSQL_DB,
+            port=db_port  # ⬅️ هادي هي اللي كانت ناقصة
         )
         print("✅ Connected to MySQL successfully!")
         return conn
@@ -1796,8 +1801,13 @@ if __name__ == '__main__':
     print("\n" + "=" * 50)
     print("🚀 Starting Pose Analysis Server")
     print("=" * 50)
+    
     host_ip = '0.0.0.0'
-    port = 5000
+    
+    # ✅✅ التغيير المهم: قراءة PORT من Render
+    # Render كيعطي بورت عشوائي، خاصنا نخدمو عليه
+    port = int(os.environ.get("PORT", 5000))
+    
     print(f"🌍 Server listening on http://{host_ip}:{port}")
 
     try:
@@ -1810,33 +1820,15 @@ if __name__ == '__main__':
     except Exception:
         print("   (Could not determine local network IP)")
 
-    print(f"🤖 AI System Status: {'Active' if posture_analyzer else 'Inactive'}")
-    db_status = "⚠️ Disconnected"
-    if db_connection:
-        try:
-            if db_connection.is_connected():
-                db_status = "✅ Connected"
-            else:
-                db_status = "🔁 Reconnect needed"
-        except:
-            db_status = "❌ Connection Error"
-
-    print(f"📦 Database ({MYSQL_DB}): {db_status}")
-    print(f"🖼️ Uploads Folder: {os.path.abspath(UPLOAD_FOLDER)}")
-    print(f"🔑 Hugging Face Key: {'Loaded' if HUGGINGFACE_API_KEY and HUGGINGFACE_API_KEY != 'hf_default_key' else 'Not Loaded/Default'}")
+    # طباعة البورت باش نتأكدو (للتجربة)
+    print(f"📦 Database Port Configured: {os.getenv('MYSQL_PORT', 'Not Set (Default 3306)')}")
     print("=" * 50 + "\n")
 
-
-
-
-
-
-
-    # Run with Socket.IO (no app.run)
+    # Run with Socket.IO
     socketio.run(
         app,
         host=host_ip,
-        port=port,
+        port=port,  # ⬅️ استعمال المتغير port
         debug=False,
         allow_unsafe_werkzeug=True
     )
