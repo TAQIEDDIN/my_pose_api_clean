@@ -1,0 +1,76 @@
+<!-- في صفحة admin dashboard -->
+<!-- مثال: patients_list.html -->
+
+<div class="patient-card">
+    <h3>{{ patient.name }}</h3>
+    <p>ID: {{ patient.user_id }}</p>
+    
+    <button onclick="startVideoCall('{{ patient.user_id }}')" class="btn-video-call">
+        📹 بدء مكالمة فيديو
+    </button>
+</div>
+
+<script>
+const socket = io("http://10.30.x.x:5000", { 
+    transports: ["websocket"] 
+});
+
+socket.on("connect", () => {
+    console.log("✅ Admin connected to socket");
+});
+
+socket.on("call_initiated", (data) => {
+    console.log("📞 Call initiated:", data);
+    
+    // الانتقال لصفحة المكالمة
+    window.location.href = `/admin/video_call/${data.call_id}`;
+});
+
+socket.on("call_rejected", (data) => {
+    alert("❌ المريض رفض المكالمة");
+});
+
+socket.on("call_accepted", (data) => {
+    console.log("✅ Patient accepted call:", data);
+});
+
+function startVideoCall(userId) {
+    console.log("📞 Starting call with user:", userId);
+    
+    socket.emit("start_call", {
+        user_id: userId
+    });
+    
+    // عرض loading
+    showLoading("جاري الاتصال بالمريض...");
+}
+
+function showLoading(message) {
+    // يمكنك إضافة modal أو spinner
+    console.log(message);
+}
+</script>
+
+<style>
+.btn-video-call {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 25px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-video-call:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.6);
+}
+
+.btn-video-call:active {
+    transform: translateY(0);
+}
+</style>

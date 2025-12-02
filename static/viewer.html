@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Pose Viewer</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #1a1a1a;
+            touch-action: none; /* منع السلوك الافتراضي للمس */
+        }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-family: sans-serif;
+            z-index: 100;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        #controls {
+            position: absolute;
+            bottom: 60px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+        .control-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 2px solid #4CAF50;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .control-btn:active {
+            background-color: rgba(76, 175, 80, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Initializing 3D...</div>
+    
+    <!-- أزرار التحكم -->
+    <div id="controls">
+        <div class="control-btn" id="zoomIn">+</div>
+        <div class="control-btn" id="zoomOut">−</div>
+        <div class="control-btn" id="reset">⟲</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+        let scene, camera, renderer;
+        let skeletonGroup;
+        let pointsMap = new Map();
+        let receivedPoseData = null;
+        let poseRendered = false;
+        
+        // متغيرات التحكم بالدوران والتكبير
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let rotation = { x: 0, y: 0 };
+        let zoom = 3; // المسافة الافتراضية
+        const minZoom = 1;
+        const maxZoom = 10;
+        
+        // متغيرات Pinch Zoom
+        let initialPinchDistance = null;
+        let initialZoom = zoom;
+        
+        const boneConnections = [
+            [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
+            [12, 14], [14, 16], [16, 18], [16, 20], [16, 22],
+            [23, 24], [23, 25], [25, 27], [27, 29], [27, 31],
+            [24, 26], [26, 28], [28, 30], [28, 32],
+            [12, 24], [11, 23], [0, 1], [1, 2], [2, 3], [3, 7],
+            [0, 4], [4, 5], [5, 6], [6, 8], [9, 10]
+        ];
+        
+        function init() {
+            if (typeof THREE === 'undefined') {
+                document.getElementById('info').textContent = '❌ THREE.js not loaded';
+                setTimeout(init, 100);
+                return;
+            }
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+            updateCameraPosition();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+            
+            // إضاءة
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(2, 3, 2);
+            scene.add(directionalLight);
+
+            // شبكة أرضية في المنتصف
+            const gridHelper = new THREE.GridHelper(4, 20, 0x444444, 0x222222);
+            gridHelper.position.y = 0; // في المنتصف تماماً
+            scene.add(gridHelper);
+
+            skeletonGroup = new THREE.Group();
+            scene.add(skeletonGroup);
+            
+            setupControls();
+            animate();
+            document.getElementById('info').textContent = '✅ Ready. Waiting for pose...';
+        }
+
+        function updateCameraPosition() {
+            const distance = zoom;
+            camera.position.x = distance * Math.sin(rotation.y) * Math.cos(rotation.x);
+            camera.position.y = distance * Math.sin(rotation.x);
+            camera.position.z = distance * Math.cos(rotation.y) * Math.cos(rotation.x);
+            camera.lookAt(0, 0, 0); // النظر للمركز بدلاً من (0, 1, 0)
+        }
+
+        function setupControls() {
+            const canvas = renderer.domElement;
+            
+            // Mouse Controls
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+            
+            canvas.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaX = e.clientX - previousMousePosition.x;
+                    const deltaY = e.clientY - previousMousePosition.y;
+                    
+                    rotation.y += deltaX * 0.01;
+                    rotation.x += deltaY * 0.01;
+                    rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotation.x));
+                    
+                    updateCameraPosition();
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
+                }
+            });
+            
+            canvas.addEventListener('mouseup', () => { isDragging = false; });
+            canvas.addEventListener('mouseleave', () => { isDragging = false; });
+            
+            // Mouse Wheel Zoom
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                zoom += e.deltaY * 0.01;
+                zoom = Math.max(minZoom, Math.min(maxZoom, zoom));
+                updateCameraPosition();
+            }, { passive: false });
+            
+            // Touch Controls (Drag)
+            canvas.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    previousMousePosition = { 
+                        x: e.touches[0].clientX, 
+                        y: e.touches[0].clientY 
+                    };
+                } else if (e.touches.length === 2) {
+                    // Pinch Start
+                    initialPinchDistance = getPinchDistance(e.touches);
+                    initialZoom = zoom;
+                }
+            });
+            
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                
+                if (e.touches.length === 1 && isDragging) {
+                    const deltaX = e.touches[0].clientX - previousMousePosition.x;
+                    const deltaY = e.touches[0].clientY - previousMousePosition.y;
+                    
+                    rotation.y += deltaX * 0.01;
+                    rotation.x += deltaY * 0.01;
+                    rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotation.x));
+                    
+                    updateCameraPosition();
+                    previousMousePosition = { 
+                        x: e.touches[0].clientX, 
+                        y: e.touches[0].clientY 
+                    };
+                } else if (e.touches.length === 2) {
+                    // Pinch Zoom
+                    const currentDistance = getPinchDistance(e.touches);
+                    const scale = currentDistance / initialPinchDistance;
+                    zoom = initialZoom / scale;
+                    zoom = Math.max(minZoom, Math.min(maxZoom, zoom));
+                    updateCameraPosition();
+                }
+            }, { passive: false });
+            
+            canvas.addEventListener('touchend', () => {
+                isDragging = false;
+                initialPinchDistance = null;
+            });
+            
+            // Button Controls
+            document.getElementById('zoomIn').addEventListener('click', () => {
+                zoom = Math.max(minZoom, zoom - 0.5);
+                updateCameraPosition();
+            });
+            
+            document.getElementById('zoomOut').addEventListener('click', () => {
+                zoom = Math.min(maxZoom, zoom + 0.5);
+                updateCameraPosition();
+            });
+            
+            document.getElementById('reset').addEventListener('click', () => {
+                rotation = { x: 0, y: 0 };
+                zoom = 3;
+                updateCameraPosition();
+            });
+        }
+
+        function getPinchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+                // دوران مستمر تلقائي حول محور Y
+                rotation.y += 0.01;  
+                updateCameraPosition();
+            if (receivedPoseData && !poseRendered) {
+                applyPoseToModel(receivedPoseData.landmarks);
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        window.handleStaticPose = function(data) {
+            console.log('📥 Received pose data:', data);
+            receivedPoseData = data;
+            poseRendered = false;
+        };
+        
+        function applyPoseToModel(landmarks) {
+            while(skeletonGroup.children.length > 0) {
+                skeletonGroup.remove(skeletonGroup.children[0]);
+            }
+            pointsMap.clear();
+
+            if (!landmarks || landmarks.length === 0) {
+                document.getElementById('info').textContent = '⚠️ No landmarks';
+                return;
+            }
+
+            console.log('🎨 Rendering', landmarks.length, 'landmarks');
+            
+            // حساب مركز الجسم بالكامل (متوسط جميع النقاط)
+            let centerX = 0, centerY = 0, centerZ = 0;
+            let count = 0;
+            
+            landmarks.forEach(lm => {
+                centerX += lm.x;
+                centerY += lm.y;
+                centerZ += lm.z;
+                count++;
+            });
+            
+            centerX /= count;
+            centerY /= count;
+            centerZ /= count;
+
+            landmarks.forEach(lm => {
+                const x = (lm.x - centerX) * 2;
+                const y = -(lm.y - centerY) * 2;
+                const z = -(lm.z - centerZ) * 2;
+                
+                const position = new THREE.Vector3(x, y, z);
+                const color = lm.id === 0 ? 0xff0000 : 0x00ff00;
+                const size = lm.id === 0 ? 0.05 : 0.03;
+                
+                const geometry = new THREE.SphereGeometry(size, 16, 16);
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: color,
+                    metalness: 0.5,
+                    roughness: 0.5
+                });
+                const joint = new THREE.Mesh(geometry, material);
+
+                joint.position.copy(position);
+                skeletonGroup.add(joint);
+                pointsMap.set(lm.id, joint);
+            });
+
+            drawBones();
+
+            document.getElementById('info').textContent = `✅ ${landmarks.length} joints. Drag to rotate, pinch to zoom`;
+            poseRendered = true;
+        }
+
+        function drawBones() {
+            boneConnections.forEach(connection => {
+                const startJoint = pointsMap.get(connection[0]);
+                const endJoint = pointsMap.get(connection[1]);
+
+                if (startJoint && endJoint) {
+                    const material = new THREE.LineBasicMaterial({ 
+                        color: 0xffffff,
+                        linewidth: 2
+                    });
+                    
+                    const geometry = new THREE.BufferGeometry().setFromPoints([
+                        startJoint.position, 
+                        endJoint.position
+                    ]);
+                    
+                    const line = new THREE.Line(geometry, material);
+                    skeletonGroup.add(line);
+                }
+            });
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+    </script>
+</body>
+</html>

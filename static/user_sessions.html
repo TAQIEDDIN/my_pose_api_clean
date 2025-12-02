@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User Sessions & Progress</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #f4f5fb;
+            min-height: 100vh; 
+            padding: 25px 15px 40px; 
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        .top-bar { display: flex; justify-content: flex-start; margin-bottom: 30px; }
+        .back-btn { 
+            background: #667eea;
+            color: #fff; 
+            border: none;
+            border-radius: 12px; 
+            padding: 10px 20px; 
+            font-size: 14px; 
+            font-weight: 600; 
+            cursor: pointer; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px; 
+            transition: all 0.3s;
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        }
+        .back-btn:hover { 
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .page-header { text-align: center; margin-bottom: 40px; color: #333; }
+        .page-title { 
+            font-size: 32px; 
+            color: #3f3d56; 
+            font-weight: 800; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 12px;
+            margin-bottom: 20px;
+            text-shadow: none;
+        }
+        .page-title span.icon { font-size: 40px; }
+        
+        .user-select-wrapper { 
+            display: flex; 
+            justify-content: center; 
+            gap: 10px;
+        }
+        .user-select-wrapper select { 
+            padding: 12px 16px; 
+            border-radius: 12px; 
+            border: none; 
+            font-size: 15px; 
+            min-width: 300px; 
+            cursor: pointer; 
+            background: white;
+            color: #333;
+            appearance: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            font-weight: 500;
+            padding-right: 40px;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 20px;
+        }
+        .user-select-wrapper select:focus { 
+            outline: none; 
+            box-shadow: 0 0 0 4px rgba(255,255,255,0.4), 0 8px 32px rgba(0,0,0,0.2);
+        }
+        
+        .card { 
+            background: white;
+            border-radius: 20px; 
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            padding: 28px; 
+            margin-bottom: 28px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .card-header { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f8;
+        }
+        .card-header h2 { 
+            font-size: 20px; 
+            color: #333;
+            font-weight: 700;
+        }
+        .card-header .emoji { font-size: 24px; }
+        
+        .call-header-row { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            gap: 20px; 
+            flex-wrap: wrap;
+            border: none;
+        }
+        .call-actions { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px;
+        }
+        .call-btn { 
+            border: none; 
+            border-radius: 999px; 
+            padding: 12px 24px; 
+            font-size: 14px; 
+            font-weight: 700; 
+            cursor: pointer; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px; 
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #fff; 
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+            transition: all 0.3s;
+        }
+        .call-btn:hover:not(:disabled) { 
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(16, 185, 129, 0.5);
+        }
+        .call-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .call-status-text { 
+            font-size: 14px; 
+            color: #10b981; 
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .call-info-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
+            gap: 16px; 
+            margin-top: 12px;
+        }
+        .call-info-item { 
+            background: linear-gradient(135deg, #f8faff 0%, #f0f4ff 100%);
+            padding: 16px 18px; 
+            border-radius: 14px;
+            border: 1px solid #e0e7ff;
+        }
+        .call-info-label { 
+            font-size: 12px; 
+            color: #666; 
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .call-info-value { 
+            font-size: 16px; 
+            font-weight: 700; 
+            color: #333;
+        }
+        
+        .pagination { 
+            display: flex; 
+            justify-content: center; 
+            gap: 8px; 
+            margin-top: 20px; 
+            margin-bottom: 8px;
+        }
+        .page-btn { 
+            padding: 8px 14px; 
+            border: 2px solid #e0e7ff; 
+            border-radius: 10px; 
+            background: white;
+            cursor: pointer; 
+            font-size: 13px; 
+            font-weight: 700; 
+            transition: all 0.3s;
+            color: #667eea;
+        }
+        .page-btn.active { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+        .page-btn:hover:not(.active) { 
+            border-color: #667eea;
+            color: #667eea;
+        }
+        
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 14px;
+        }
+        thead tr { 
+            background: linear-gradient(135deg, #f8faff 0%, #f0f4ff 100%);
+            border-bottom: 2px solid #e0e7ff;
+        }
+        th, td { 
+            padding: 14px 16px; 
+            border-bottom: 1px solid #ececf5; 
+            text-align: left;
+        }
+        th { 
+            color: #667eea; 
+            font-weight: 700;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        tbody tr { 
+            transition: all 0.2s;
+        }
+        tbody tr:hover { 
+            background: #f8faff;
+            box-shadow: inset 0 0 10px rgba(102, 126, 234, 0.08);
+        }
+        
+        .status-badge { 
+            padding: 4px 12px; 
+            border-radius: 999px; 
+            font-size: 12px; 
+            font-weight: 700; 
+            display: inline-block;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .status-normal { 
+            background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+            color: #065f46;
+        }
+        .status-moderate { 
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #92400e;
+        }
+        .status-high { 
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #7f1d1d;
+        }
+        
+        .compare-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); 
+            gap: 16px; 
+            margin-top: 8px;
+        }
+        .compare-item { 
+            background: linear-gradient(135deg, #f8faff 0%, #f0f4ff 100%);
+            border-radius: 14px; 
+            padding: 16px;
+            border: 1px solid #e0e7ff;
+        }
+        .compare-label { 
+            font-size: 12px; 
+            color: #667eea;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .compare-value { 
+            font-size: 18px; 
+            font-weight: 800; 
+            margin-top: 6px; 
+            color: #333;
+        }
+        .compare-tag { 
+            display: inline-block; 
+            margin-top: 8px; 
+            padding: 4px 12px; 
+            border-radius: 999px; 
+            font-size: 11px; 
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .tag-better { 
+            background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+            color: #065f46;
+        }
+        .tag-worse { 
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #7f1d1d;
+        }
+        .tag-same { 
+            background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+            color: #5b21b6;
+        }
+        
+        .charts-row { 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 28px;
+        }
+        .chart-card { 
+            flex: 1 1 0; 
+            min-width: 320px;
+        }
+        .chart-wrapper { 
+            width: 100%; 
+            height: 280px;
+        }
+        
+        .empty-message { 
+            text-align: center; 
+            color: #999; 
+            padding: 40px 20px; 
+            font-size: 15px;
+            background: linear-gradient(135deg, #f8faff 0%, #f0f4ff 100%);
+            border-radius: 14px;
+            border: 2px dashed #e0e7ff;
+        }
+        
+        @media (max-width: 900px) { 
+            .chart-card { max-width: 100%; } 
+            .call-header-row { flex-direction: column; align-items: flex-start; } 
+            .user-select-wrapper { flex-direction: column; }
+            .user-select-wrapper select { min-width: 100%; }
+            .page-title { font-size: 24px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <div class="top-bar">
+        <button class="back-btn" onclick="window.location.href='/admin/dashboard'">
+            ← Back to Dashboard
+        </button>
+    </div>
+
+    <div class="page-header">
+        <div class="page-title">
+            <span class="icon">📊</span>
+            <span>User Sessions & Progress</span>
+        </div>
+        <div class="user-select-wrapper">
+            <select id="userSelect"></select>
+        </div>
+    </div>
+
+    <div class="card" id="lastCallCard">
+        <div class="card-header call-header-row">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="emoji">📞</span>
+                <h2>Last Call with this User</h2>
+            </div>
+            <div class="call-actions">
+                <span id="callStatusText" class="call-status-text">🔴 Connecting...</span>
+                <button id="startCallBtn" class="call-btn" onclick="startCallForCurrentUser()">
+                    <span>📹</span>
+                    <span>Start Call</span>
+                </button>
+            </div>
+        </div>
+        <div id="lastCallContent">
+            <div class="call-info-grid">
+                <div class="call-info-item">
+                    <div class="call-info-label">Last Call Date</div>
+                    <div class="call-info-value" id="lastCallTime">-</div>
+                </div>
+                <div class="call-info-item">
+                    <div class="call-info-label">Duration</div>
+                    <div class="call-info-value" id="lastCallDuration">-</div>
+                </div>
+            </div>
+            <p id="lastCallMessage" style="color:#999; margin-top:16px; font-size:14px;">Loading call information...</p>
+        </div>
+    </div>
+
+    <div class="card" id="sessionsCard">
+        <div class="card-header">
+            <span class="emoji">📝</span>
+            <h2>All Sessions</h2>
+        </div>
+        <div id="sessionsContent">
+            <table>
+                <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Shoulder Diff (mm)</th>
+                    <th>Hip Diff (mm)</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody id="sessionsTableBody"></tbody>
+            </table>
+        </div>
+        <div id="paginationControls"></div>
+        <div class="empty-message" id="noSessionsMessage" style="display:none;">📭 No sessions found for this user yet.</div>
+    </div>
+
+    <div class="card" id="compareCard" style="display:none;">
+        <div class="card-header">
+            <span class="emoji">🔍</span>
+            <h2>Last Session vs Previous</h2>
+        </div>
+        <div id="compareContent" class="compare-grid"></div>
+    </div>
+
+    <div class="charts-row">
+        <div class="card chart-card">
+            <div class="card-header">
+                <h2>Shoulder Difference Chart</h2>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="shoulderChart"></canvas>
+            </div>
+        </div>
+        <div class="card chart-card">
+            <div class="card-header">
+                <h2>Hip Difference Chart</h2>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="hipChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let allPoses = [];
+    let currentUserId = null;
+    let shoulderChart = null;
+    let hipChart = null;
+    let socket = null;
+
+    // ================== Socket.IO Setup ==================
+    function setupSocketIO() {
+        try {
+            socket = io({ transports: ["websocket"] });
+
+            socket.on('connect', () => {
+                console.log('✅ Connected to Socket.IO');
+                document.getElementById('callStatusText').textContent = '🟢 Online';
+            });
+
+            socket.on('disconnect', () => {
+                console.log('❌ Disconnected from Socket.IO');
+                document.getElementById('callStatusText').textContent = '🔴 Offline';
+            });
+
+        } catch (e) {
+            console.error('Error setting up Socket.IO:', e);
+            document.getElementById('callStatusText').textContent = '⚠️ Error';
+        }
+    }
+
+    // ================== Start Call Function ==================
+    function startCallForCurrentUser() {
+        if (!currentUserId) {
+            alert('Please select a user first.');
+            return;
+        }
+        
+        if (!socket || !socket.connected) {
+            console.log("⚠️ Socket not connected, trying to connect...");
+            socket.connect();
+        }
+
+        const btn = document.getElementById('startCallBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span><span>Starting...</span>';
+        }
+
+        socket.emit('start_call', { 
+            user_id: currentUserId 
+        }, (response) => {
+            console.log('📨 Server Response:', response);
+            if (response && response.call_id) {
+                console.log("✅ Call Created! Redirecting...");
+                window.location.href = `/admin/video_call/${response.call_id}`;
+            } else {
+                alert("❌ Error: Server did not return a Call ID.");
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>📹</span><span>Start Call</span>';
+                }
+            }
+        });
+    }
+
+    // ================== Load Data ==================
+    async function loadData() {
+        try {
+            const res = await fetch('/admin/get-all-poses');
+            const data = await res.json();
+
+            if (!data.success || !data.poses || data.poses.length === 0) {
+                document.getElementById('sessionsContent').style.display = 'none';
+                document.getElementById('noSessionsMessage').style.display = 'block';
+                return;
+            }
+
+            allPoses = data.poses;
+            populateUserSelect();
+        } catch (e) {
+            console.error('Error loading poses:', e);
+        }
+    }
+
+    // ================== Populate User Select ==================
+    function populateUserSelect() {
+        const userSelect = document.getElementById('userSelect');
+        userSelect.innerHTML = '';
+
+        const usersMap = new Map();
+        allPoses.forEach(p => {
+            if (!usersMap.has(p.user_id)) {
+                usersMap.set(p.user_id, {
+                    id: p.user_id,
+                    name: p.user_name || 'Unknown',
+                    email: p.user_email || ''
+                });
+            }
+        });
+
+        const users = Array.from(usersMap.values()).sort((a, b) =>
+            a.name.localeCompare(b.name)
+        );
+
+        if (users.length === 0) {
+            userSelect.disabled = true;
+            return;
+        }
+
+        users.forEach((u) => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = `${u.name} (${u.email})`;
+            userSelect.appendChild(opt);
+        });
+
+        const savedUserId = localStorage.getItem('selected_patient_id');
+        const userExists = users.some(u => u.id === savedUserId);
+
+        if (userExists) {
+            currentUserId = savedUserId;
+        } else {
+            currentUserId = users[0].id;
+        }
+
+        userSelect.value = currentUserId;
+
+        userSelect.addEventListener('change', () => {
+            currentUserId = userSelect.value;
+            localStorage.setItem('selected_patient_id', currentUserId);
+            renderForUser();
+        });
+
+        renderForUser();
+    }
+
+    // ================== Render For User ==================
+    function renderForUser() {
+        if (!currentUserId) return;
+
+        const sessions = allPoses
+            .filter(p => p.user_id === currentUserId)
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        if (sessions.length === 0) {
+            document.getElementById('sessionsContent').style.display = 'none';
+            document.getElementById('noSessionsMessage').style.display = 'block';
+            document.getElementById('compareCard').style.display = 'none';
+        } else {
+            document.getElementById('sessionsContent').style.display = 'block';
+            document.getElementById('noSessionsMessage').style.display = 'none';
+
+            paginateSessions(sessions);
+            currentPage = 1;
+            renderSessionsTable();
+            renderPagination();
+
+            renderComparison(sessions);
+            renderCharts(sessions);
+        }
+
+        loadLastCallInfo(currentUserId);
+    }
+
+    // ================== Load Last Call Info ==================
+    async function loadLastCallInfo(userId) {
+        const msg = document.getElementById('lastCallMessage');
+        const timeSpan = document.getElementById('lastCallTime');
+        const durationSpan = document.getElementById('lastCallDuration');
+
+        if (!msg || !timeSpan || !durationSpan) return;
+
+        msg.textContent = 'Loading last call...';
+        timeSpan.textContent = '-';
+        durationSpan.textContent = '-';
+
+        try {
+            const res = await fetch(`/admin/get-last-call/${userId}`);
+            const data = await res.json();
+
+            if (!data.success || !data.has_call) {
+                msg.textContent = 'No calls logged for this user yet.';
+                return;
+            }
+
+            const call = data.call;
+            msg.textContent = '';
+
+            const started = call.started_at ? new Date(call.started_at) : null;
+            const durationSec = call.duration_seconds;
+
+            if (started) {
+                timeSpan.textContent = started.toLocaleString('en-US');
+            }
+
+            if (durationSec != null && durationSec > 0) {
+                const minutes = Math.floor(durationSec / 60);
+                const seconds = durationSec % 60;
+                durationSpan.textContent = `${minutes}m ${seconds}s`;
+            } else {
+                durationSpan.textContent = 'Ended (No duration)';
+            }
+
+        } catch (err) {
+            console.error('Error fetching last call:', err);
+            msg.textContent = 'Error loading last call info.';
+        }
+    }
+
+    // ================== Comparison ==================
+    function renderComparison(sessions) {
+        const container = document.getElementById('compareContent');
+        const card = document.getElementById('compareCard');
+        container.innerHTML = '';
+
+        if (sessions.length < 2) {
+            card.style.display = 'none';
+            return;
+        }
+        card.style.display = 'block';
+
+        const last = sessions[0];
+        const prev = sessions[1];
+        
+        const diffShoulder = (Math.abs(last.shoulder_y_diff||0) - Math.abs(prev.shoulder_y_diff||0));
+        const diffHip = (Math.abs(last.hip_y_diff||0) - Math.abs(prev.hip_y_diff||0));
+        
+        let trend = "Stable";
+        let trendClass = "tag-same";
+        if(diffShoulder < -0.5) { trend = "Improving"; trendClass="tag-better"; }
+        else if(diffShoulder > 0.5) { trend = "Worsening"; trendClass="tag-worse"; }
+
+        container.innerHTML = `
+            <div class="compare-item"><div class="compare-label">Shoulder Change</div><div class="compare-value">${diffShoulder.toFixed(2)} mm</div></div>
+            <div class="compare-item"><div class="compare-label">Hip Change</div><div class="compare-value">${diffHip.toFixed(2)} mm</div></div>
+            <div class="compare-item"><div class="compare-label">Trend</div><div class="compare-value"><span class="compare-tag ${trendClass}">${trend}</span></div></div>
+        `;
+    }
+
+    // ================== Charts ==================
+    function renderCharts(sessions) {
+        const ctxShoulder = document.getElementById('shoulderChart').getContext('2d');
+        const ctxHip = document.getElementById('hipChart').getContext('2d');
+
+        const ordered = [...sessions].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const labels = ordered.map(s => new Date(s.timestamp).toLocaleDateString());
+        const dataShoulder = ordered.map(s => Math.abs(s.shoulder_y_diff || 0));
+        const dataHip = ordered.map(s => Math.abs(s.hip_y_diff || 0));
+
+        if (shoulderChart) shoulderChart.destroy();
+        if (hipChart) hipChart.destroy();
+
+        shoulderChart = new Chart(ctxShoulder, {
+            type: 'line',
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: 'Shoulder Diff', 
+                    data: dataShoulder, 
+                    borderColor: '#a855f7',
+                    backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: '#a855f7',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5
+                }] 
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+        hipChart = new Chart(ctxHip, {
+            type: 'line',
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: 'Hip Diff', 
+                    data: dataHip, 
+                    borderColor: '#f97316',
+                    backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: '#f97316',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5
+                }] 
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    // ================== Pagination & Helpers ==================
+    const ITEMS_PER_PAGE = 3;
+    let currentPage = 1;
+    let paginatedSessions = [];
+
+    function paginateSessions(all) {
+        paginatedSessions = [];
+        for (let i = 0; i < all.length; i += ITEMS_PER_PAGE) {
+            paginatedSessions.push(all.slice(i, i + ITEMS_PER_PAGE));
+        }
+    }
+
+    function renderPagination() {
+        const div = document.getElementById("paginationControls");
+        div.innerHTML = "";
+        if (paginatedSessions.length <= 1) return;
+        
+        paginatedSessions.forEach((_, idx) => {
+            const btn = document.createElement("button");
+            btn.className = `page-btn ${currentPage === idx + 1 ? 'active' : ''}`;
+            btn.innerText = idx + 1;
+            btn.onclick = () => { currentPage = idx + 1; renderSessionsTable(); renderPagination(); };
+            div.appendChild(btn);
+        });
+    }
+
+    function renderSessionsTable() {
+        const tbody = document.getElementById("sessionsTableBody");
+        tbody.innerHTML = "";
+        const list = paginatedSessions[currentPage - 1] || [];
+        
+        list.forEach(s => {
+            const tr = document.createElement("tr");
+            const sh = Math.abs(s.shoulder_y_diff || 0).toFixed(2);
+            const hp = Math.abs(s.hip_y_diff || 0).toFixed(2);
+            let badge = sh > 10 ? "status-high" : (sh > 5 ? "status-moderate" : "status-normal");
+            let txt = sh > 10 ? "High Risk" : (sh > 5 ? "Moderate" : "Normal");
+            
+            tr.innerHTML = `<td>${new Date(s.timestamp).toLocaleString()}</td><td>${sh} mm</td><td>${hp} mm</td><td><span class="status-badge ${badge}">${txt}</span></td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    window.onload = function() {
+        setupSocketIO();
+        loadData();
+    };
+</script>
+</body>
+</html>

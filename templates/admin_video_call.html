@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Call - Admin</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .header {
+            position: absolute;
+            top: 20px;
+            width: 90%;
+            max-width: 800px;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            padding: 10px 20px;
+            border-radius: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+            z-index: 100;
+        }
+
+        /* --- Video Container --- */
+        .video-container {
+            position: relative;
+            width: 640px; 
+            height: 480px;
+            background: #000;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #remoteVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; 
+        }
+
+        #localVideo {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 120px;
+            height: 90px;
+            background: #333;
+            border: 2px solid white;
+            border-radius: 10px;
+            object-fit: cover;
+            z-index: 10;
+        }
+
+        /* --- Controls --- */
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+            padding: 15px 30px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 50px;
+            backdrop-filter: blur(5px);
+        }
+
+        .control-btn {
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 22px;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-btn:hover { transform: scale(1.1); }
+        .btn-mic { background: #4CAF50; color: white; }
+        .btn-end { background: #f44336; color: white; width: 65px; height: 65px; font-size: 28px; }
+        .btn-cam { background: #2196F3; color: white; }
+        .btn-capture { background: #ff9800; color: white; }
+        .off { background: #555 !important; opacity: 0.8; }
+
+        /* --- Status & Overlays --- */
+        .status-badge {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            z-index: 5;
+        }
+        .dot { width: 8px; height: 8px; background: red; border-radius: 50%; }
+        .dot.connected { background: #0f0; box-shadow: 0 0 5px #0f0; }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 2;
+        }
+        .hidden { display: none !important; }
+        
+        .loader {
+            border: 4px solid #f3f3f3; border-top: 4px solid #3498db;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin-bottom: 10px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- Flash Effect --- */
+        @keyframes flash {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .flash-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        .flash-active {
+            animation: flash 0.3s ease-out;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="flashEffect" class="flash-overlay"></div>
+
+    <div class="header">
+        <div>Call ID: <span style="font-family: monospace;">{{ call_id }}</span></div>
+        <h3>Admin Console</h3>
+    </div>
+
+    <div class="video-container">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay playsinline muted></video>
+
+        <div class="status-badge">
+            <div id="statusDot" class="dot"></div>
+            <span id="statusText">Connecting...</span>
+        </div>
+
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="loader"></div>
+            <div>Waiting for patient video...</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="control-btn btn-mic" id="btnMic" onclick="toggleMic()">🎤</button>
+        <button class="control-btn btn-end" onclick="endCall()">📞</button>
+        <button class="control-btn btn-cam" id="btnCam" onclick="toggleCam()">📹</button>
+        <button class="control-btn btn-capture" onclick="captureAndAnalyze()" title="Capture & Analyze">📸</button>
+    </div>
+
+    <canvas id="captureCanvas" style="display: none;"></canvas>
+
+    <script>
+        const CALL_ID = "{{ call_id }}";
+        const SOCKET_URL = "{{ socket_url }}".replace(/\/$/, "");
+        
+        let socket, pc, localStream;
+        let isMicOn = true, isCamOn = true;
+        let isProcessingOffer = false;
+        let pendingCandidates = [];
+        let currentUserId = null; // ✅ تخزين معرف المريض هنا
+
+        window.onload = init;
+
+        function init() {
+            console.log("🚀 Initializing Admin Call...");
+            
+            socket = io(SOCKET_URL, { 
+                transports: ["websocket"],
+                reconnection: true 
+            });
+
+            socket.on("connect", () => {
+                console.log("✅ Socket Connected");
+                document.getElementById("statusText").innerText = "Server Connected";
+                socket.emit("admin_join_call", { call_id: CALL_ID });
+            });
+
+            socket.on("incoming_webrtc_offer", handleOffer);
+            
+            socket.on("ice_candidate", (data) => {
+                if (pc && pc.remoteDescription) {
+                    pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } else {
+                    pendingCandidates.push(data.candidate);
+                }
+            });
+
+            socket.on("call_ended", endCall);
+        }
+
+        async function handleOffer(data) {
+            // ✅ حفظ User ID بمجرد وصول العرض
+            currentUserId = data.user_id;
+            console.log("✅ Patient Connected! User ID:", currentUserId);
+
+            if (isProcessingOffer) return;
+            isProcessingOffer = true;
+
+            try {
+                if (pc) { pc.close(); pc = null; }
+
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+                });
+
+                pc.ontrack = (event) => {
+                    const vid = document.getElementById("remoteVideo");
+                    if (vid.srcObject !== event.streams[0]) {
+                        vid.srcObject = event.streams[0];
+                        document.getElementById("loadingOverlay").classList.add("hidden");
+                    }
+                };
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit("ice_candidate", {
+                            target: data.user_id,
+                            candidate: event.candidate
+                        });
+                    }
+                };
+
+                pc.onconnectionstatechange = () => {
+                    const state = pc.connectionState;
+                    const dot = document.getElementById("statusDot");
+                    const txt = document.getElementById("statusText");
+                    
+                    if (state === "connected") {
+                        dot.classList.add("connected");
+                        txt.innerText = "Connected";
+                    } else {
+                        dot.classList.remove("connected");
+                        txt.innerText = state;
+                    }
+                };
+
+                if (!localStream) {
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    document.getElementById("localVideo").srcObject = localStream;
+                }
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                
+                while (pendingCandidates.length) {
+                    await pc.addIceCandidate(new RTCIceCandidate(pendingCandidates.shift()));
+                }
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                socket.emit("webrtc_answer", {
+                    user_id: data.user_id,
+                    call_id: CALL_ID,
+                    answer: answer
+                });
+
+            } catch (err) {
+                console.error("❌ Error in WebRTC:", err);
+            } finally {
+                isProcessingOffer = false;
+            }
+        }
+
+        // --- 🔥 دالة التقاط الصورة والتحليل (مع قاعدة البيانات) ---
+        async function captureAndAnalyze() {
+            const video = document.getElementById("remoteVideo");
+            
+            if (!video.srcObject || video.readyState < 2) {
+                alert("❌ No active video feed to capture!");
+                return;
+            }
+            if (!currentUserId) {
+                alert("⚠️ Error: Unknown Patient ID. Wait for connection.");
+                return;
+            }
+
+            // تأثير الفلاش
+            const flash = document.getElementById("flashEffect");
+            flash.classList.add("flash-active");
+            setTimeout(() => flash.classList.remove("flash-active"), 300);
+
+            // التقاط الصورة
+            const canvas = document.getElementById("captureCanvas");
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageBase64 = canvas.toDataURL("image/jpeg", 0.9);
+
+            try {
+                const btn = document.querySelector(".btn-capture");
+                const originalText = btn.innerHTML;
+                btn.innerHTML = "⏳";
+                btn.disabled = true;
+
+                // ✅ الإرسال إلى Route الجديد
+                const response = await fetch("/save-snapshot-analysis", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        image_base64: imageBase64,
+                        user_id: currentUserId 
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log("✅ Saved to DB:", result);
+                    alert("✅ Snapshot saved to Patient History successfully!");
+                } else {
+                    alert("⚠️ Error: " + (result.error || "Unknown"));
+                }
+
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+
+            } catch (err) {
+                console.error("❌ Network Error:", err);
+                alert("❌ Could not connect to server.");
+                document.querySelector(".btn-capture").innerHTML = "📸";
+                document.querySelector(".btn-capture").disabled = false;
+            }
+        }
+
+        function toggleMic() {
+            if (!localStream) return;
+            const track = localStream.getAudioTracks()[0];
+            isMicOn = !isMicOn;
+            track.enabled = isMicOn;
+            document.getElementById("btnMic").classList.toggle("off", !isMicOn);
+        }
+
+        function toggleCam() {
+            if (!localStream) return;
+            const track = localStream.getVideoTracks()[0];
+            isCamOn = !isCamOn;
+            track.enabled = isCamOn;
+            document.getElementById("btnCam").classList.toggle("off", !isCamOn);
+        }
+
+        function endCall() {
+            if (socket) socket.emit("end_call", { call_id: CALL_ID });
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
+            if (pc) pc.close();
+            window.location.href = "/admin/user_sessions";
+        }
+    </script>
+</body>
+</html>
