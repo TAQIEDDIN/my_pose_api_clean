@@ -44,7 +44,9 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 app.secret_key = "super_secret_key_for_admin_dashboard_123" 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
-
+@app.route('/')
+def home():
+    return "✅ Server is Running Successfully! (Pose API)"
 # --- Database connection setup ---
 MYSQL_HOST = os.getenv("MYSQL_HOST")
 MYSQL_USER = os.getenv("MYSQL_USER")
