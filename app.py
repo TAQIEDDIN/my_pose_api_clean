@@ -43,7 +43,7 @@ load_dotenv()
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 app.secret_key = "super_secret_key_for_admin_dashboard_123" 
-
+app.config['SECRET_KEY'] = 'fd345@#$vd_8934_secure_key_pose_app_2025'
 
 
 @app.route('/')
