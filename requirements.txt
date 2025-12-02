@@ -10,12 +10,12 @@ colorama
 contourpy
 cycler
 dnspython
-eventlet
+eventlet==0.33.3  # ⬅️ هذا هو التغيير المهم
 Flask
 Flask-SocketIO
 flatbuffers
 fonttools
-greenlet
+greenlet==2.0.2   # ⬅️ نسخة متوافقة
 gunicorn
 h11
 idna
